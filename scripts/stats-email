@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+
+UPTIME=$(uptime -p)
+CPU_LOAD=$(uptime | awk -F'load average:' '{print $2}' | xargs) # current cpu load is useless but I don't care
+MEMORY=$(free -h | awk '/Mem:/ {print $3 " / " $2}')
+DISK=$(df -h / | awk 'NR==2 {print $3 " / " $2 " (" $5 ")"}')
+
+DOCKER_STATS=$(docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}")
+DOCKER_RUNNING=$(docker ps -q | wc -l)
+DOCKER_TOTAL=$(docker ps -aq | wc -l)
+
+FAIL2BAN_SUMMARY=$(
+  for jail in $(fail2ban-client status | awk -F: '/Jail list:/ {print $2}' | tr ',' ' '); do
+    jail=$(echo $jail | xargs)
+    count=$(fail2ban-client status "$jail" | awk '/Currently banned/ {print $4}')
+    echo "$jail: $count"
+  done
+)
+
+EMAIL_HTML=$(cat <<EOF
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>VPS Status Report</title>
+<style>
+body {
+  font-family: 'Courier New', monospace;
+  background: #f5f6fa;
+  color: #2f3640;
+  padding: 20px;
+}
+.container {
+  max-width: 700px;
+  margin: auto;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  overflow: hidden;
+  border: 1px solid #eee;
+}
+.header {
+  background: #2f3640;
+  color: #f5f6fa;
+  text-align: center;
+  padding: 20px;
+  font-size: 22px;
+  font-weight: bold;
+}
+.section {
+  padding: 20px;
+  border-bottom: 1px solid #f0f0f0;
+}
+.section h3 {
+  margin-top: 0;
+  font-size: 18px;
+  color: #353b48;
+  text-transform: uppercase;
+}
+.stat {
+  background: #f1f2f6;
+  padding: 10px;
+  border-radius: 5px;
+  margin: 5px 0;
+}
+pre {
+  background: #f1f2f6;
+  padding: 10px;
+  border-radius: 5px;
+  white-space: pre-wrap;
+}
+.footer {
+  text-align: center;
+  padding: 10px;
+  font-size: 12px;
+  color: #888;
+}
+</style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">VPS Summary Report</div>
+
+    <div class="section">
+      <h3>System</h3>
+      <div class="stat"><b>Uptime:</b> $UPTIME</div>
+      <div class="stat"><b>CPU Load:</b> $CPU_LOAD</div>
+      <div class="stat"><b>Memory:</b> $MEMORY</div>
+      <div class="stat"><b>Disk:</b> $DISK</div>
+    </div>
+
+    <div class="section">
+      <h3>Docker</h3>
+      <div class="stat">
+        <b>Running:</b> $DOCKER_RUNNING / $DOCKER_TOTAL
+      </div>
+      <pre>$DOCKER_STATS</pre>
+    </div>
+
+    <div class="section">
+      <h3>Fail2Ban</h3>
+      <pre>$FAIL2BAN_SUMMARY</pre>
+    </div>
+
+    <div class="footer">
+      Generated automatically on $(hostname) at $(date '+%Y-%m-%d %H:%M:%S')
+    </div>
+  </div>
+</body>
+</html>
+EOF
+)
+
+SUBJECT="VPS Report: $(date '+%Y-%m-%d %H:%M')"
+source /home/deploy/bin/.env
+
+/home/deploy/bin/mailer "$SUBJECT" "$EMAIL_HTML"

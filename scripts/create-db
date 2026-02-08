@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
+    echo "Usage: $0 <db_name> [db_host]"
+    exit 1
+fi
+
+DB_NAME="$1"
+DB_USER="$DB_NAME"
+
+# Use the provided host or default to 127.0.0.1
+DB_HOST="${2:-127.0.0.1}"
+
+DB_PASSWORD=$(openssl rand -base64 24)
+if [ $? -ne 0 ]; then
+    echo "Error: openssl command failed. Cannot generate a password."
+    exit 1
+fi
+
+DB_PORT="5432"
+
+echo "Creating user '$DB_USER' and database '$DB_NAME'..."
+
+docker exec -i postgres psql -U admin -v ON_ERROR_STOP=1 <<EOF
+CREATE USER $DB_USER WITH PASSWORD '$DB_PASSWORD';
+CREATE DATABASE $DB_NAME OWNER $DB_USER;
+EOF
+
+if [ $? -eq 0 ]; then
+    echo "Database and user created successfully."
+    echo
+    echo "Generated DATABASE_URL for your application:"
+    echo "DATABASE_URL=postgresql://$DB_USER:$DB_PASSWORD@$DB_HOST:$DB_PORT/$DB_NAME"
+else
+    echo "Error: Failed to execute SQL commands."
+    exit 1
+fi
+

@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+if [ "$#" -ne 2 ]; then
+    echo "Usage: $0 <db_name> <s3_bucket_name>"
+    exit 1
+fi
+
+DB_NAME="$1"
+S3_BUCKET="$2"
+DB_USER="$DB_NAME" # Assuming username is the same as the db name
+LOG_FILE="$HOME/log/backup-db.log"
+
+log() {
+    while IFS= read -r line; do
+        echo "$(date '+%Y/%m/%d %H:%M:%S') - $line" >> "$LOG_FILE"
+    done
+}
+
+BACKUP_DIR="$HOME/backups/$DB_NAME"
+mkdir -p "$BACKUP_DIR"
+BACKUP_FILE="$BACKUP_DIR/dump_${DB_NAME}_$(date +%Y_%m_%d).sql"
+
+echo "Backing up database '$DB_NAME' to $BACKUP_FILE.gz..." | log
+
+docker exec postgres pg_dump -U "$DB_USER" -d "$DB_NAME" > "$BACKUP_FILE"
+
+if [ $? -eq 0 ]; then
+    echo "Database dump successful. Compressing file..." | log
+    gzip "$BACKUP_FILE"
+else
+    echo "Error: Local backup failed." | log
+    rm -f "$BACKUP_FILE" # Clean up empty file
+    exit 1
+fi
+
+BACKUP_GZ_FILE="$BACKUP_FILE.gz"
+S3_PATH="backups/$DB_NAME/"
+BASE_NAME=$(basename "$BACKUP_GZ_FILE")
+
+echo "Uploading backup to S3: s3://$S3_BUCKET/$S3_PATH$BASE_NAME" | log
+
+aws s3 cp "$BACKUP_GZ_FILE" "s3://$S3_BUCKET/$S3_PATH$BASE_NAME"
+
+if [ $? -eq 0 ]; then
+    echo "S3 upload successful." | log
+else
+    echo "Error: S3 upload failed." | log
+    exit 1
+fi
+
+echo "Done." | log

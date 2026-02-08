@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+source $HOME/bin/.env
+
+BACKUP_SCRIPT="$HOME/bin/backup-db"
+LOG_FILE="$HOME/log/backup-db.log"
+
+log() {
+    while IFS= read -r line; do
+        echo "$(date '+%Y/%m/%d %H:%M:%S') - $line" >> "$LOG_FILE"
+    done
+}
+
+# Loop over comma-separated database names
+IFS=',' read -ra DBS <<< "$BACKUP_DBS"
+for db in "${DBS[@]}"; do
+    db=$(echo "$db" | xargs)  # Trim whitespace
+    if "$BACKUP_SCRIPT" "$db" "$S3_BUCKET" 2>&1 | log; then
+        echo "$db backup successful." | log
+    else
+        echo "$db backup failed." | log
+    fi
+done
+
+echo "Backup run finished." | log

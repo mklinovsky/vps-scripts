@@ -1,0 +1,4 @@
+.env
+.env.remote
+.DS_Store
+mailer/mailer

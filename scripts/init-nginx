@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+
+if [ $# -ne 3 ]; then
+  echo "Usage: $0 APP_NAME SERVER_NAME PORT"
+  exit 1
+fi
+
+APP_NAME="$1"
+SERVER_NAME="$2"
+PORT="$3"
+
+NGINX_CONF_DIR="/etc/nginx/sites-available"
+NGINX_CONF="$NGINX_CONF_DIR/$APP_NAME.conf"
+
+if [ -f "$NGINX_CONF" ]; then
+  echo "Nginx config $NGINX_CONF already exists. Skipping creation."
+else
+  cat <<EOF | sudo tee "$NGINX_CONF" > /dev/null
+server {
+    listen 80;
+    server_name $SERVER_NAME;
+
+    location / {
+        proxy_pass http://127.0.0.1:$PORT;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    access_log /var/log/nginx/$APP_NAME.access.log;
+    error_log /var/log/nginx/$APP_NAME.error.log;
+}
+EOF
+
+  sudo ln -sf "$NGINX_CONF" /etc/nginx/sites-enabled/$APP_NAME.conf
+  echo "Nginx config created and enabled: $NGINX_CONF"
+fi
+
+echo "Testing Nginx configuration..."
+sudo nginx -t
+if [ $? -ne 0 ]; then
+  echo "Nginx config test failed. Aborting."
+  exit 1
+fi
+
+echo "Reloading Nginx..."
+sudo systemctl reload nginx
+
+if ! sudo certbot certificates | grep -q "Domains: $SERVER_NAME"; then
+  echo "Requesting SSL certificate for $SERVER_NAME..."
+  sudo certbot --nginx -d "$SERVER_NAME"
+  echo "SSL certificate created and Nginx automatically configured."
+else
+  echo "SSL certificate for $SERVER_NAME already exists. Skipping Certbot."
+fi
+
+echo "Nginx and SSL setup complete for $APP_NAME ($SERVER_NAME)."
+
+sudo fail2ban-client reload
+

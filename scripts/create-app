@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+
+source $HOME/bin/.env
+
+if [ $# -ne 1 ]; then
+  echo "Usage: $0 APP_NAME"
+  exit 1
+fi
+
+APP_NAME="$1"
+SAFE_APP_NAME=$(echo -n "$APP_NAME" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-')
+
+DEPLOY_DIR="$HOME/$PROJECTS_DIR/$APP_NAME"
+REPO_DIR="$DEPLOY_DIR/repo.git"
+CODE_DIR="$DEPLOY_DIR/release"
+ENV_FILE="$DEPLOY_DIR/.env"
+
+mkdir -p $REPO_DIR
+mkdir -p $CODE_DIR
+touch $ENV_FILE
+echo "# Add your environment variables here" > $ENV_FILE
+
+git init --bare $REPO_DIR
+
+# Create post-receive hook
+cat > $REPO_DIR/hooks/post-receive <<EOF
+#!/usr/bin/env bash
+APP_DIR="$CODE_DIR"
+ENV_FILE="$ENV_FILE"
+
+while read oldrev newrev ref
+do
+  # Only deploy tags
+  if [[ \$ref =~ ^refs/tags/ ]]; then
+    TAG=\$(basename \$ref)
+    echo "Deploying tag \$TAG"
+
+    # Checkout tag into working folder
+    GIT_WORK_TREE=\$APP_DIR git checkout -f \$TAG
+
+    # Copy environment file
+    cp \$ENV_FILE \$APP_DIR/.env
+
+    # Rebuild/run Docker
+    cd \$APP_DIR
+    export GIT_TAG="\$TAG"
+    docker compose -p $SAFE_APP_NAME up -d --build
+  fi
+done
+EOF
+
+chmod +x $REPO_DIR/hooks/post-receive
+
+echo "App '$APP_NAME' initialized"
+echo "Bare repo: $REPO_DIR"
+echo "Working folder: $CODE_DIR"
+echo "Environment file: $ENV_FILE"
+echo
+echo "To add remote to your local Git repository, run:"
+echo "git remote add deploy ssh://$VPS_USER@$VPS_IP$REPO_DIR"
