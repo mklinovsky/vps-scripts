@@ -8,25 +8,14 @@ Sometimes a cheap VPS (like Hetzner) is all you need to host your apps. You don'
 
 ### 1. Setup Configuration
 
-Create two environment files:
-
-**Local configuration** (for `install.sh` to connect to VPS):
-```bash
-cp .env.example .env
-```
-
-Required variables:
-- `VPS_IP` - VPS IP address
-- `VPS_USER` - SSH user (I am using `deploy`)
-
-**Remote configuration** (runtime config deployed to VPS):
+Create the configuration file. `install.sh` connects to `VPS_USER@VPS_IP` from it and deploys it to the VPS as the scripts' runtime configuration:
 ```bash
 cp .env.remote.example .env.remote
 ```
 
 Required variables:
 - `PROJECTS_DIR` - Directory for projects (default: `projects`)
-- `VPS_USER` - SSH user (`deploy`)
+- `VPS_USER` - SSH user (I am using `deploy`)
 - `VPS_IP` - VPS IP address
 - `BACKUP_DBS` - Comma-separated database names to backup
 - `S3_BUCKET` - S3 bucket for backups
@@ -45,6 +34,8 @@ This will:
 - Copy all scripts to `/home/<VPS_USER>/bin/` on VPS
 - Set proper permissions
 - Copy `.env.remote` as `/home/<VPS_USER>/bin/.env` on the VPS (backing up existing as `/home/<VPS_USER>/bin/.env.bak`)
+
+For another server, create `.env.remote.<target>` the same way and run `./install.sh <target>`.
 
 ---
 
@@ -354,8 +345,7 @@ vps-scripts/
 ├── mailer/              # Go source for email utility
 ├── install.sh           # Installation script
 ├── git-tag.sh           # Semver tag & deploy helper
-├── .env.example         # Local configuration template
-├── .env.remote.example  # VPS runtime configuration template
+├── .env.remote.example  # Configuration template (install target + VPS runtime)
 ├── .gitignore
 └── README.md
 ```

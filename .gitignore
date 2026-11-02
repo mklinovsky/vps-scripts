@@ -1,4 +1,5 @@
 .env
-.env.remote
+.env.*
+!.env.remote.example
 .DS_Store
 mailer/mailer

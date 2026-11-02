@@ -2,17 +2,20 @@
 
 set -e
 
-if [ ! -f ./.env ]; then
-    echo "Error: .env file not found. Please create one from .env.example"
+# Usage: ./install.sh [TARGET]   (TARGET reads .env.remote.TARGET instead of .env.remote)
+env_file=.env.remote${1:+.$1}
+
+if [ ! -f "./$env_file" ]; then
+    echo "Error: $env_file file not found. Please create one from .env.remote.example"
     exit 1
 fi
 
-source ./.env
+source "./$env_file"
 
 echo $VPS_IP
 
 if [ -z "$VPS_IP" ] || [ -z "$VPS_USER" ]; then
-    echo "Error: VPS_IP and VPS_USER must be set in .env"
+    echo "Error: VPS_IP and VPS_USER must be set in $env_file"
     exit 1
 fi
 
@@ -32,15 +35,10 @@ rsync -v mailer/mailer "$VPS_USER@$VPS_IP:/home/$VPS_USER/bin/"
 echo "Setting permissions..."
 ssh "$VPS_USER@$VPS_IP" "chmod +x /home/$VPS_USER/bin/*"
 
-if [ -f .env.remote ]; then
-    echo "Deploying .env.remote to VPS..."
-    ssh "$VPS_USER@$VPS_IP" "[ -f /home/$VPS_USER/bin/.env ] && cp /home/$VPS_USER/bin/.env /home/$VPS_USER/bin/.env.bak || true"
-    rsync -v .env.remote "$VPS_USER@$VPS_IP:/home/$VPS_USER/bin/.env"
-    echo "Remote .env deployed (previous version backed up as .env.bak if it existed)."
-else
-    echo ""
-    echo "WARNING: No .env.remote found. Skipping remote .env deployment."
-fi
+echo "Deploying $env_file to VPS..."
+ssh "$VPS_USER@$VPS_IP" "[ -f /home/$VPS_USER/bin/.env ] && cp /home/$VPS_USER/bin/.env /home/$VPS_USER/bin/.env.bak || true"
+rsync -v "$env_file" "$VPS_USER@$VPS_IP:/home/$VPS_USER/bin/.env"
+echo "Remote .env deployed (previous version backed up as .env.bak if it existed)."
 
 echo ""
 echo "Installation complete!"
