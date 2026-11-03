@@ -23,6 +23,10 @@ Required variables:
 - `EMAIL_FROM` - Email sender
 - `EMAIL_TO` - Email recipient for notifications
 
+Only for `init-caddy`:
+- `CADDY_DOMAIN` - Parent domain of the app names (e.g. `example.com`)
+- `CADDY_CERT`, `CADDY_KEY` - Shared certificate and key for `*.$CADDY_DOMAIN`
+
 ### 2. Install Scripts to VPS
 
 ```bash
@@ -192,6 +196,42 @@ init-nginx myapp myapp.example.com 3000
 
 ---
 
+### Caddy Setup
+
+#### `init-caddy`
+Serves an application as `https://APP_NAME.$CADDY_DOMAIN` through Caddy, for hosts that run Caddy instead of Nginx.
+
+```bash
+init-caddy APP_NAME PORT
+```
+
+**Parameters:**
+- `APP_NAME` - Application identifier, also the subdomain
+- `PORT` - Local port the app's container publishes on `127.0.0.1`
+
+**What it does:**
+- Writes `/etc/caddy/sites/APP_NAME.caddy`: the site bound to `$VPS_IP`, TLS from `$CADDY_CERT`/`$CADDY_KEY`, reverse proxy to `127.0.0.1:PORT`
+- Refuses when the name is already defined in the main Caddyfile or the port is already proxied by another site
+- Validates the Caddy configuration and restores the previous site file if validation fails
+- Restarts Caddy (the admin API is off, so it cannot reload)
+
+Running it again for the same app rewrites its site file. Uses `sudo` internally, like `init-nginx`.
+
+**One-time setup:** the main `/etc/caddy/Caddyfile` must contain:
+```
+import /etc/caddy/sites/*.caddy
+```
+
+**Example:**
+```bash
+init-caddy myapp 3000
+# https://myapp.example.com -> 127.0.0.1:3000
+```
+
+DNS for the name is not handled here.
+
+---
+
 ### Backup Scripts
 
 #### `backup-db`
@@ -330,6 +370,7 @@ mailer "Subject" "<html>Email body</html>"
 │   ├── create-app
 │   ├── create-db
 │   ├── init-nginx
+│   ├── init-caddy
 │   ├── backup-db
 │   ├── backup-all-dbs
 │   ├── stats-email

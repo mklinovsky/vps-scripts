@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# Usage: init-caddy APP_NAME PORT
+# Serves https://APP_NAME.$CADDY_DOMAIN through Caddy, proxied to 127.0.0.1:PORT.
+
+script_dir=$(dirname "$(readlink -f "$0")")
+source "$script_dir/.env"
+
+if [ $# -ne 2 ]; then
+  echo "Usage: $0 APP_NAME PORT"
+  exit 1
+fi
+
+APP_NAME="$1"
+PORT="$2"
+
+for var in VPS_IP CADDY_DOMAIN CADDY_CERT CADDY_KEY; do
+  if [ -z "${!var:-}" ]; then
+    echo "Error: $var must be set in $script_dir/.env"
+    exit 1
+  fi
+done
+
+if [[ ! $APP_NAME =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+  echo "Error: APP_NAME must be lowercase letters, digits and dashes"
+  exit 1
+fi
+
+if [[ ! $PORT =~ ^[0-9]+$ ]] || [ "$PORT" -lt 1024 ] || [ "$PORT" -gt 65535 ]; then
+  echo "Error: PORT must be a number between 1024 and 65535"
+  exit 1
+fi
+
+CADDYFILE="/etc/caddy/Caddyfile"
+SITES_DIR="/etc/caddy/sites"
+SITE_FILE="$SITES_DIR/$APP_NAME.caddy"
+HOST="$APP_NAME.$CADDY_DOMAIN"
+
+if ! grep -qx "import $SITES_DIR/\*.caddy" "$CADDYFILE"; then
+  echo "Error: $CADDYFILE has no 'import $SITES_DIR/*.caddy' line"
+  exit 1
+fi
+
+if grep -qE "^[[:space:]]*$HOST[[:space:]]*\{" "$CADDYFILE"; then
+  echo "Error: $HOST is already defined in $CADDYFILE; remove that block first"
+  exit 1
+fi
+
+for file in "$CADDYFILE" "$SITES_DIR"/*.caddy; do
+  [ -e "$file" ] && [ "$file" != "$SITE_FILE" ] || continue
+  if grep -qE "reverse_proxy[[:space:]]+(127\.0\.0\.1|localhost):$PORT([[:space:]]|$)" "$file"; then
+    echo "Error: port $PORT is already proxied in $file"
+    exit 1
+  fi
+done
+
+sudo mkdir -p "$SITES_DIR"
+
+backup=""
+if [ -f "$SITE_FILE" ]; then
+  backup=$(mktemp)
+  cp "$SITE_FILE" "$backup"
+fi
+
+sudo tee "$SITE_FILE" > /dev/null <<EOF
+$HOST {
+	bind $VPS_IP
+	tls $CADDY_CERT $CADDY_KEY
+	reverse_proxy 127.0.0.1:$PORT
+}
+EOF
+
+echo "Validating Caddy configuration..."
+if ! sudo caddy validate --config "$CADDYFILE" --adapter caddyfile; then
+  if [ -n "$backup" ]; then
+    sudo cp "$backup" "$SITE_FILE"
+  else
+    sudo rm -f "$SITE_FILE"
+  fi
+  rm -f "$backup"
+  echo "Caddy config validation failed. $SITE_FILE restored; Caddy not restarted."
+  exit 1
+fi
+rm -f "$backup"
+
+# The admin API is off, so a reload is not possible.
+echo "Restarting Caddy..."
+sudo systemctl restart caddy
+
+echo "https://$HOST -> 127.0.0.1:$PORT ($SITE_FILE)"
